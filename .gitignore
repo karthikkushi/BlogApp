@@ -1,0 +1,13 @@
+# Ignore Visual Studio temporary files
+.vs/
+bin/
+obj/
+*.user
+*.suo
+*.dbmdl
+*.log
+*.sqlite
+*.vscode/
+*.cache/
+*.env
+.env
