@@ -1,0 +1,518 @@
+﻿@page "/"
+@using BlogAppFrontend.Models
+@using BlogAppFrontend.Services
+@using MudBlazor
+@inject BlogService BlogService
+@inject ISnackbar Snackbar
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>BlogApp - Home</PageTitle>
+
+<style>
+    /* Hero background gradient */
+    .hero-gradient {
+        background: linear-gradient(135deg, var(--mud-palette-background), var(--mud-palette-surface)) !important;
+        color: var(--mud-palette-text-primary);
+    }
+
+    .hero-gradient::before {
+        background: url("data:image/svg+xml,%3Csvg width='60' height='60' ...") repeat;
+        opacity: 0.03; /* reduce brightness in dark */
+    }
+
+    @@keyframes float {
+        0%, 100% {
+            transform: translateY(0px);
+        }
+        50% {
+            transform: translateY(-10px);
+        }
+    }
+
+    .glass-effect {
+        background: rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 16px;
+    }
+
+    .modern-card {
+        background: linear-gradient(145deg, var(--mud-palette-surface) 0%, var(--mud-palette-background) 100%);
+        border-radius: 20px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        border: 1px solid var(--mud-palette-background);
+    }
+
+    .modern-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+    }
+
+    .category-card {
+        background: linear-gradient(135deg, var(--mud-palette-primary) 0%, var(--mud-palette-surface) 100%);
+        border-radius: 16px;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .category-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+        transition: left 0.5s;
+    }
+
+    .category-card:hover::before {
+        left: 100%;
+    }
+
+    /* Alternate colors for cards */
+    .category-card:nth-child(2n) {
+        background: linear-gradient(135deg, var(--mud-palette-surface) 0%, var(--mud-palette-background) 100%);
+    }
+
+    .category-card:nth-child(3n) {
+        background: linear-gradient(135deg, var(--mud-palette-background) 0%, var(--mud-palette-surface) 100%);
+    }
+
+    .category-card:nth-child(4n) {
+        background: linear-gradient(135deg, var(--mud-palette-primary) 0%, var(--mud-palette-info) 100%);
+    }
+
+    .category-card:nth-child(5n) {
+        background: linear-gradient(135deg, var(--mud-palette-primary) 0%, var(--mud-palette-secondary) 100%);
+    }
+
+    .category-card:nth-child(6n) {
+        background: linear-gradient(135deg, var(--mud-palette-secondary) 0%, var(--mud-palette-primary) 100%);
+    }
+
+    .notification-badge {
+        animation: pulse 2s infinite;
+    }
+
+    @@keyframes pulse {
+        0% {
+            transform: scale(1);
+        }
+        50% {
+            transform: scale(1.1);
+        }
+        100% {
+            transform: scale(1);
+        }
+    }
+
+    .animated-icon {
+        animation: bounce 2s infinite;
+    }
+
+    @@keyframes bounce {
+        0%, 20%, 50%, 80%, 100% {
+            transform: translateY(0);
+        }
+        40% {
+            transform: translateY(-10px);
+        }
+        60% {
+            transform: translateY(-5px);
+        }
+    }
+
+    .section-header {
+        background: linear-gradient(90deg, var(--mud-palette-primary), var(--mud-palette-surface));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        font-weight: 700;
+    }
+
+    .modern-appbar {
+        background: linear-gradient(90deg, var(--mud-palette-appbar-background) 0%, var(--mud-palette-surface) 100%);
+        color: var(--mud-palette-text-primary);
+        backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--mud-palette-divider);
+    }
+
+    .featured-post-card {
+        background: linear-gradient(145deg, var(--mud-palette-surface) 0%, var(--mud-palette-background) 100%);
+        border-radius: 20px;
+        overflow: hidden;
+        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        border: 1px solid var(--mud-palette-background);
+        position: relative;
+    }
+
+    .featured-post-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, var(--mud-palette-primary), var(--mud-palette-surface));
+        transform: scaleX(0);
+        transition: transform 0.3s ease;
+    }
+
+    .featured-post-card:hover::before {
+        transform: scaleX(1);
+    }
+
+    .featured-post-card:hover {
+        transform: translateY(-12px) rotateX(5deg);
+        box-shadow: 0 25px 50px rgba(30, 42, 56, 0.2);
+    }
+
+    .featured-post-card .mud-text {
+        color: var(--mud-palette-text-primary) !important; /* Ensure post titles use theme text color */
+    }
+
+    .loading-container {
+        background: linear-gradient(-45deg, var(--mud-palette-primary), var(--mud-palette-surface), var(--mud-palette-secondary), var(--mud-palette-background));
+        background-size: 400% 400%;
+        animation: gradientShift 4s ease infinite;
+        border-radius: 20px;
+    }
+
+    @@keyframes gradientShift {
+        0% {
+            background-position: 0% 50%;
+        }
+        50% {
+            background-position: 100% 50%;
+        }
+        100% {
+            background-position: 0% 50%;
+        }
+    }
+</style>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pa-0">
+    <!-- Remove Modern Navigation Bar and MudAppBar here -->
+    
+    <!-- Keep the rest of the Home page content (hero, featured, etc.) -->
+    <!-- Hero Section -->
+    <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="px-4">
+        <MudPaper Class="hero-gradient pa-8 mb-8" Style="border-radius: 30px; position: relative; z-index: 1;">
+            <MudGrid AlignItems="Center" Spacing="4">
+                <MudItem xs="12" md="7">
+                    <MudText Typo="Typo.h2" Style="font-weight: 800; text-shadow: 0 2px 4px rgba(0,0,0,0.1);"
+                             Class="mb-4">
+                        Welcome to the Future of Blogging
+                    </MudText>
+                    <MudText Typo="Typo.h5" Style="font-weight: 300; line-height: 1.6; color: var(--mud-palette-text-secondary);"
+                             Class="mb-6">
+                        Discover amazing stories, connect with brilliant minds, and share your unique perspective with the world.
+                    </MudText>
+                    <MudStack Row="true" Spacing="3" Wrap="Wrap.Wrap">
+                        <MudButton Variant="Variant.Filled" Size="Size.Large"
+                                   Style="background: #667eea; color: white; border-radius: 25px; padding: 12px 32px; font-weight: 600; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"
+                                   Href="/posts"
+                                   StartIcon="@Icons.Material.Filled.Explore">
+                            Explore Stories
+                        </MudButton>
+                        <AuthorizeView>
+                            <Authorized>
+                                <MudButton Variant="Variant.Outlined" Size="Size.Large"
+                                           Style="color: var(--mud-palette-text-primary); border-color: var(--mud-palette-text-primary); border-radius: 25px; padding: 12px 32px; font-weight: 600; background: rgba(255,255,255,0.2);"
+                                           Href="/create-post"
+                                           StartIcon="@Icons.Material.Filled.Create">
+                                    Start Writing
+                                </MudButton>
+                            </Authorized>
+                            <NotAuthorized>
+                                <MudButton Variant="Variant.Outlined" Size="Size.Large"
+                                           Style="color: var(--mud-palette-text-primary); border-color: var(--mud-palette-text-primary); border-radius: 25px; padding: 12px 32px; font-weight: 600; background: rgba(255,255,255,0.2);"
+                                           Href="/signin"
+                                           StartIcon="@Icons.Material.Filled.Login">
+                                    Join Community
+                                </MudButton>
+                            </NotAuthorized>
+                        </AuthorizeView>
+                    </MudStack>
+                </MudItem>
+                <MudItem xs="12" md="5" Class="d-flex align-center justify-center">
+                    <MudIcon Icon="@Icons.Material.Filled.AutoStories"
+                             Size="Size.Large"
+                             Style="color: var(--mud-palette-text-primary); font-size: 200px; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.1));"
+                             Class="animated-icon" />
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <!-- Featured Posts Section -->
+        <MudPaper Elevation="0" Class="pa-6 mb-8" Style="background: transparent;">
+            <MudGrid AlignItems="Center" Class="mb-6">
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.h4" Class="section-header">✨ Featured Stories</MudText>
+                    <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mt-2">
+                        Handpicked stories that inspire and engage
+                    </MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6" Class="d-flex justify-end">
+                    <MudButton Variant="Variant.Filled" 
+                               Color="Color.Primary" 
+                               Href="/posts"
+                               Style="border-radius: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"
+                               EndIcon="@Icons.Material.Filled.ArrowForward">
+                        View All Stories
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+
+            @if (_isLoading)
+            {
+                <MudContainer Class="loading-container d-flex justify-center align-center pa-8" Style="height: 300px;">
+                    <MudStack AlignItems="AlignItems.Center" Spacing="3">
+                        <MudProgressCircular Color="Color.Surface" Indeterminate="true" Size="Size.Large" />
+                        <MudText Typo="Typo.h6" Style="color: white;">Loading amazing content...</MudText>
+                    </MudStack>
+                </MudContainer>
+            }
+            else if (_errorMessage != null)
+            {
+                <MudAlert Severity="Severity.Error" Class="my-4" Style="border-radius: 16px;">
+                    <MudIcon Icon="@Icons.Material.Filled.Error" Class="mr-2" />
+                    @_errorMessage
+                </MudAlert>
+            }
+            else if (!_featuredPosts.Any())
+            {
+                <MudPaper Elevation="0" Class="pa-8 modern-card">
+                    <MudStack AlignItems="AlignItems.Center" Spacing="3">
+                        <MudIcon Icon="@Icons.Material.Filled.LibraryBooks" Size="Size.Large" Color="Color.Secondary" />
+                        <MudText Typo="Typo.h6" Color="Color.Secondary">No featured posts available yet.</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Be the first to create amazing content!</MudText>
+                    </MudStack>
+                </MudPaper>
+            }
+            else
+            {
+                <MudGrid Spacing="4">
+                    @foreach (var post in _featuredPosts.Take(3))
+                    {
+                        <MudItem xs="12" md="4" Class="h-100">
+                            <MudCard Class="featured-post-card h-100 d-flex flex-column" @onclick="@(() => NavigateToPost(post.Id))">
+                                <MudCardHeader Class="pb-2">
+                                    <MudCardHeaderContent>
+                                        <MudText Typo="Typo.h6" Class="text-truncate" Style="font-weight: 600; color: var(--mud-palette-text-primary);">
+                                            @post.Title
+                                        </MudText>
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-2">
+                                            <MudAvatar Size="Size.Small" Style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                                                @post.AuthorName?.FirstOrDefault()
+                                            </MudAvatar>
+                                            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                                @post.AuthorName
+                                            </MudText>
+                                            <MudSpacer />
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                @(post.PublishedAt?.ToString("MMM dd") ?? "Draft")
+                                            </MudText>
+                                        </MudStack>
+                                    </MudCardHeaderContent>
+                                </MudCardHeader>
+                                <MudCardContent Class="pt-2 flex-grow-1 d-flex flex-column justify-space-between">
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary" Style="line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
+                                        @post.Content
+                                    </MudText>
+                                    @if (post.Tags?.Any() == true)
+                                    {
+                                        <MudStack Row="true" Spacing="1" Class="mt-3" Wrap="Wrap.Wrap">
+                                            @foreach (var tag in post.Tags.Take(3))
+                                            {
+                                                <MudChip T="string" Size="Size.Small" 
+                                                        Style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-radius: 12px;">
+                                                    @tag
+                                                </MudChip>
+                                            }
+                                            @if (post.Tags.Count > 3)
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Style="border-radius: 12px;">
+                                                    +@(post.Tags.Count - 3) more
+                                                </MudChip>
+                                            }
+                                        </MudStack>
+                                    }
+                                </MudCardContent>
+                            </MudCard>
+                        </MudItem>
+                    }
+                </MudGrid>
+            }
+        </MudPaper>
+
+        <!-- Categories Section -->
+        <MudPaper Elevation="0" Class="pa-6 mb-8" Style="background: transparent;">
+            <MudGrid AlignItems="Center" Class="mb-6">
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.h4" Class="section-header">🎯 Explore Categories</MudText>
+                    <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mt-2">
+                        Find content that matches your interests
+                    </MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6" Class="d-flex justify-end">
+                    <MudButton Variant="Variant.Filled" 
+                               Color="Color.Primary" 
+                               Href="/categories"
+                               Style="border-radius: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"
+                               EndIcon="@Icons.Material.Filled.ArrowForward">
+                        View All Categories
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+
+            @if (_isLoading)
+            {
+                <MudContainer Class="loading-container d-flex justify-center align-center pa-6" Style="height: 200px;">
+                    <MudStack AlignItems="AlignItems.Center" Spacing="3">
+                        <MudProgressCircular Color="Color.Surface" Indeterminate="true" Size="Size.Medium" />
+                        <MudText Typo="Typo.body1" Style="color: white;">Loading categories...</MudText>
+                    </MudStack>
+                </MudContainer>
+            }
+            else if (_errorMessage != null)
+            {
+                <MudAlert Severity="Severity.Error" Class="my-4" Style="border-radius: 16px;">
+                    <MudIcon Icon="@Icons.Material.Filled.Error" Class="mr-2" />
+                    @_errorMessage
+                </MudAlert>
+            }
+            else if (!_categories.Any())
+            {
+                <MudPaper Elevation="0" Class="pa-8 modern-card">
+                    <MudStack AlignItems="AlignItems.Center" Spacing="3">
+                        <MudIcon Icon="@Icons.Material.Filled.Category" Size="Size.Large" Color="Color.Secondary" />
+                        <MudText Typo="Typo.h6" Color="Color.Secondary">No categories available yet.</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Categories will appear as content is added!</MudText>
+                    </MudStack>
+                </MudPaper>
+            }
+            else
+            {
+                <MudGrid Spacing="3">
+                    @foreach (var category in _categories.Take(6))
+                    {
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudPaper Class="category-card pa-4 d-flex align-center" 
+                                      @onclick="@(() => NavigateToCategory(category.Id))"
+                                      Style="cursor: pointer; color: white; min-height: 80px;">
+                                <MudIcon Icon="@Icons.Material.Filled.Tag" 
+                                         Color="Color.Inherit" 
+                                         Class="mr-3" 
+                                         Size="Size.Large" />
+                                <MudStack Spacing="0">
+                                    <MudText Typo="Typo.h6" Style="color: white; font-weight: 600;">
+                                        @category.Name
+                                    </MudText>
+                                    <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.8);">
+                                        Explore articles
+                                    </MudText>
+                                </MudStack>
+                                <MudSpacer />
+                                <MudIcon Icon="@Icons.Material.Filled.ArrowForward" 
+                                         Color="Color.Inherit" 
+                                         Style="opacity: 0.8;" />
+                            </MudPaper>
+                        </MudItem>
+                    }
+                </MudGrid>
+            }
+        </MudPaper>
+    </MudContainer>
+</MudContainer>
+
+@code {
+    private List<Post> _featuredPosts = new();
+    private List<Category> _categories = new();
+    private List<Notification> notifications = new();
+    private int unreadNotificationsCount;
+    private bool _isLoading = true;
+    private string _errorMessage;
+    private string _searchTerm;
+    private string _selectedCategoryId = "All";
+    private bool _isValid = true;
+    private MudForm _form;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _isLoading = true;
+            _featuredPosts = await BlogService.GetPostsAsync();
+            _categories = await BlogService.GetCategoriesAsync();
+
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            if (authState.User.Identity?.IsAuthenticated == true)
+            {
+                notifications = await BlogService.GetNotificationsAsync();
+                unreadNotificationsCount = notifications.Count(n => !n.IsRead);
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to load posts, categories, or notifications: {ex.Message}";
+            Snackbar.Add(_errorMessage, Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task MarkNotificationAsRead(string notificationId)
+    {
+        try
+        {
+            await BlogService.MarkNotificationAsReadAsync(notificationId);
+            notifications = await BlogService.GetNotificationsAsync();
+            unreadNotificationsCount = notifications.Count(n => !n.IsRead);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error marking notification as read: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void NavigateToCategory(string categoryId)
+    {
+        NavigationManager.NavigateTo($"/posts?category={categoryId}");
+    }
+
+    private void NavigateToPost(string postId)
+    {
+        NavigationManager.NavigateTo($"/post/{postId}");
+    }
+
+    private void PerformSearch()
+    {
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_searchTerm))
+        {
+            query.Add($"search={Uri.EscapeDataString(_searchTerm)}");
+        }
+        if (_selectedCategoryId != "All")
+        {
+            query.Add($"category={Uri.EscapeDataString(_selectedCategoryId)}");
+        }
+
+        var queryString = query.Any() ? $"?{string.Join("&", query)}" : "";
+        NavigationManager.NavigateTo($"/posts{queryString}");
+    }
+
+    private void ResetSearch()
+    {
+        _searchTerm = null;
+        _selectedCategoryId = "All";
+    }
+}

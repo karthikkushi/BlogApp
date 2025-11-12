@@ -1,0 +1,83 @@
+﻿@page "/signin"
+@using BlogAppFrontend.Services
+@using System.ComponentModel.DataAnnotations
+@inject AuthService AuthService
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@using MudBlazor
+
+<PageTitle>Sign In - BlogApp</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-16">
+    <MudPaper Elevation="3" Class="pa-8">
+        <MudContainer Class="d-flex flex-column align-center">
+            <MudIcon Icon="@Icons.Material.Filled.Login"
+                     Color="Color.Primary"
+                     Size="Size.Large"
+                     Class="mb-4" />
+            <MudText Typo="Typo.h4" Class="mb-2">Sign In</MudText>
+        </MudContainer>
+
+        <MudForm @ref="form" @bind-IsValid="@isValid">
+            <MudTextField @bind-Value="signInRequest.Email"
+                          Label="Email"
+                          Variant="Variant.Outlined"
+                          Required="true"
+                          RequiredError="Email is required"
+                          InputType="InputType.Email"
+                          Validation="@(new EmailAddressAttribute() { ErrorMessage = "Invalid email format" })"
+                          Class="mb-4" />
+
+            <MudTextField @bind-Value="signInRequest.Password"
+                          Label="Password"
+                          Variant="Variant.Outlined"
+                          Required="true"
+                          RequiredError="Password is required"
+                          InputType="InputType.Password"
+                          MinLength="6"
+                          MaxLength="50"
+                          Counter="50"
+                          Class="mb-4" />
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       FullWidth="true"
+                       OnClick="SignInUser"
+                       Disabled="!isValid"
+                       StartIcon="@Icons.Material.Filled.Login"
+                       Class="mb-4">
+                Sign In
+            </MudButton>
+
+            <MudText Typo="Typo.body2" Align="Align.Center">
+                Don't have an account? <MudLink Href="/signup">Sign Up</MudLink>
+            </MudText>
+        </MudForm>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private MudForm form;
+    private bool isValid;
+    private SignInRequest signInRequest = new();
+
+    private async Task SignInUser()
+    {
+        try
+        {
+            await AuthService.SignInAsync(signInRequest.Email, signInRequest.Password);
+            Snackbar.Add("Signed in successfully!", Severity.Success);
+            Navigation.NavigateTo("/");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error signing in: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private class SignInRequest
+    {
+        public string Email { get; set; }
+        public string Password { get; set; }
+    }
+}

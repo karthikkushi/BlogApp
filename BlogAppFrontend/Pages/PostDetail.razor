@@ -1,0 +1,411 @@
+@page "/post/{Id}"
+@using BlogAppFrontend.Components
+@inject BlogService BlogService
+@inject AuthService AuthService
+@inject ISnackbar Snackbar
+
+<PageTitle>Post Details</PageTitle>
+
+<style>
+    .post-header {
+        background: linear-gradient(90deg, var(--mud-palette-primary), var(--mud-palette-primary-dark));
+        padding: 30px;
+        border-radius: 20px 20px 0 0;
+        color: var(--mud-palette-text-primary-contrast);
+    }
+
+    .post-title {
+        font-weight: 700;
+        font-size: 2rem;
+        color: var(--mud-palette-text-primary-contrast);
+    }
+
+    .post-subtitle {
+        color: var(--mud-palette-text-secondary-contrast);
+        font-weight: 400;
+    }
+
+    .post-card {
+        border-radius: 20px;
+        overflow: hidden;
+        box-shadow: 0 10px 30px rgba(var(--mud-palette-shadow-rgb), 0.15);
+        background-color: var(--mud-palette-surface);
+    }
+
+    .reaction-btn {
+        transition: all 0.2s ease-in-out;
+    }
+
+        .reaction-btn:hover {
+            transform: scale(1.05);
+        }
+
+    .comment-section {
+        background-color: var(--mud-palette-background);
+        border-radius: 12px;
+        padding: 20px;
+        margin-top: 20px;
+    }
+</style>
+
+@if (_isLoading)
+{
+    <MudContainer MaxWidth="MaxWidth.Medium" Class="mt-6 text-center">
+        <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
+    </MudContainer>
+}
+else if (_errorMessage != null)
+{
+    <MudContainer MaxWidth="MaxWidth.Medium" Class="mt-6">
+        <MudAlert Severity="Severity.Error">@_errorMessage</MudAlert>
+    </MudContainer>
+}
+else if (_post == null)
+{
+    <MudContainer MaxWidth="MaxWidth.Medium" Class="mt-6 text-center">
+        <MudText Color="Color.Secondary">No post found.</MudText>
+    </MudContainer>
+}
+else
+{
+    <MudContainer MaxWidth="MaxWidth.Medium" Class="mt-6">
+        <MudPaper Class="post-card">
+
+            <!-- Header Section -->
+            <div class="post-header">
+                <MudText Class="post-title">@_post.Title</MudText>
+                <MudText Class="post-subtitle" Typo="Typo.subtitle2">
+                    By @_post.AuthorName • @(_post.PublishedAt?.ToString("dd MMM yyyy") ?? "Draft")
+
+                    @if (_post.Status != "Published")
+                    {
+                        <MudChip T="string" Color="Color.Warning" Class="ml-2">Draft</MudChip>
+                    }
+                </MudText>
+            </div>
+
+            <!-- Image -->
+            <MudContainer Class="pa-4">
+                <UnsplashImage Title="@_post.Title" Category="@_post.CategoryId" Tags="@_post.Tags" />
+            </MudContainer>
+
+            <!-- Post Content -->
+            <MudContainer Class="pa-4">
+                <MudText Typo="Typo.body1" Class="mb-3" Style="line-height:1.8;">
+                    @_post.Content
+                </MudText>
+
+                @if (_post.Tags?.Any() == true)
+                {
+                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1" Class="mb-4">
+                        @foreach (var tag in _post.Tags)
+                        {
+                            <MudChip T="string" Color="Color.Secondary">@tag</MudChip>
+                        }
+                    </MudStack>
+                }
+
+                <MudDivider Class="my-4" />
+
+                <!-- Reactions -->
+                <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Primary">Reactions</MudText>
+                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1" Class="mb-4">
+                    @foreach (var reaction in _reactionEmojis)
+                    {
+                        var count = _reactions.Count(r => r.Type == reaction.Type);
+                        var userReacted = _currentUserId != null && _reactions.Any(r => r.UserId == _currentUserId && r.Type == reaction.Type);
+
+                        <MudButton Variant="@(userReacted ? Variant.Filled : Variant.Outlined)"
+                                   Color="Color.Primary"
+                                   Size="Size.Small"
+                                   Class="reaction-btn"
+                                   OnClick="() => ToggleReaction(reaction.Type)"
+                                   Disabled="@(_currentUserId == null)"
+                                   Title="@(userReacted ? $"Remove {reaction.Type}" : $"Add {reaction.Type}")">
+                            @reaction.Emoji (@count)
+                        </MudButton>
+                    }
+                </MudStack>
+
+                <MudDivider Class="my-4" />
+
+                <!-- Comments -->
+                <MudText Typo="Typo.h6" Color="Color.Primary" Class="mb-2">Comments</MudText>
+
+                <div class="comment-section">
+                    @if (_currentUserId != null)
+                    {
+                        <MudForm @ref="_commentForm" Class="mb-4">
+                            <MudTextField T="string"
+                                          @bind-Value="_newComment"
+                                          Label="Write a comment..."
+                                          Variant="Variant.Outlined"
+                                          Lines="4"
+                                          FullWidth="true"
+                                          Required="true"
+                                          RequiredError="Comment cannot be empty" />
+                            <MudStack Row="true" Spacing="2" Class="mt-2">
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddComment">Post</MudButton>
+                                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="RefreshComments" Disabled="@_isLoading">Refresh</MudButton>
+                                @if (_post.Status != "Published" && _post.AuthorId == _currentUserId)
+                                {
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Success" OnClick="PublishPost" Disabled="@IsPublishDisabled()">Publish</MudButton>
+                                }
+                            </MudStack>
+                        </MudForm>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                            Please sign in to post a comment.
+                        </MudText>
+                    }
+
+                    @if (_comments.Any() && (_post.Status == "Published" || _post.AuthorId == _currentUserId))
+                    {
+                        @foreach (var comment in _comments)
+                        {
+                            <MudPaper Elevation="1" Class="pa-3 mb-3" Style="border-radius: 12px;">
+                                @if (_editingCommentId == comment.Id)
+                                {
+                                    <MudForm @ref="_editCommentForm" @onsubmit="@(() => UpdateComment(comment.Id))">
+                                        <MudTextField T="string"
+                                                      @bind-Value="_editingCommentContent"
+                                                      Label="Edit comment"
+                                                      Variant="Variant.Outlined"
+                                                      Lines="3"
+                                                      FullWidth="true"
+                                                      Required="true"
+                                                      RequiredError="Comment cannot be empty" />
+                                        <MudStack Row="true" Spacing="2" Class="mt-2">
+                                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Type="submit" Disabled="@(!_editCommentForm.IsValid)">Save</MudButton>
+                                            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="CancelEdit">Cancel</MudButton>
+                                        </MudStack>
+                                    </MudForm>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.body2" Class="mb-1">@comment.Content</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        By @comment.AuthorName • @comment.CreatedAt.ToString("dd MMM yyyy")
+                                    </MudText>
+                                    @if (_currentUserId == comment.AuthorId)
+                                    {
+                                        <MudStack Row="true" Spacing="1" Class="mt-2">
+                                            <MudButton Size="Size.Small" Color="Color.Info" OnClick="() => StartEdit(comment)">Edit</MudButton>
+                                            <MudButton Size="Size.Small" Color="Color.Error" OnClick="() => DeleteComment(comment.Id)">Delete</MudButton>
+                                        </MudStack>
+                                    }
+                                }
+                            </MudPaper>
+                        }
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">No comments yet.</MudText>
+
+                        @if (_post.Status != "Published" && _post.AuthorId != _currentUserId)
+                        {
+                            <MudText Typo="Typo.body2" Color="Color.Warning" Class="mt-2">
+                                Comments are only visible on published posts.
+                            </MudText>
+                        }
+                    }
+                </div>
+            </MudContainer>
+        </MudPaper>
+    </MudContainer>
+}
+
+@code {
+    [Parameter] public string Id { get; set; }
+
+    private Post? _post;
+    private List<Comment> _comments = new();
+    private List<Reaction> _reactions = new();
+    private string? _currentUserId;
+    private bool _isLoading = true;
+    private string? _errorMessage;
+    private string _newComment = string.Empty;
+    private string? _editingCommentId;
+    private string _editingCommentContent = string.Empty;
+    private MudForm? _commentForm;
+    private MudForm? _editCommentForm;
+    private readonly (string Type, string Emoji)[] _reactionEmojis = [
+        ("Like", "👍"),
+        ("Love", "❤️"),
+        ("Sad", "😢"),
+        ("Wow", "😮")
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        try
+        {
+            _isLoading = true;
+            _currentUserId = await AuthService.GetUserIdAsync();
+            _post = await BlogService.GetPostAsync(Id);
+            _comments = await BlogService.GetCommentsByPostAsync(Id);
+            _reactions = await BlogService.GetReactionsAsync(Id);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to load post: {ex.Message}";
+            Snackbar.Add(_errorMessage, Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task AddComment()
+    {
+        if (_commentForm == null) return;
+        await _commentForm.Validate();
+
+        if (!_commentForm.IsValid || _currentUserId == null) return;
+
+        try
+        {
+            var userProfile = await BlogService.GetUserProfileAsync(_currentUserId);
+            var commentRequest = new CommentRequest
+                {
+                    PostId = Id,
+                    Content = _newComment.Trim(),
+                    AuthorId = _currentUserId,
+                    AuthorName = userProfile?.Username ?? "Anonymous"
+                };
+            await BlogService.CreateCommentAsync(commentRequest);
+            _newComment = string.Empty;
+            await _commentForm.ResetAsync();
+            Snackbar.Add("Comment added successfully", Severity.Success);
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to add comment: {ex.Message}";
+            Snackbar.Add(_errorMessage, Severity.Error);
+        }
+    }
+
+    private void StartEdit(Comment comment)
+    {
+        _editingCommentId = comment.Id;
+        _editingCommentContent = comment.Content;
+    }
+
+    private async Task UpdateComment(string commentId)
+    {
+        if (string.IsNullOrWhiteSpace(_editingCommentContent)) return;
+
+        try
+        {
+            var commentRequest = new CommentRequest { Content = _editingCommentContent.Trim() };
+            await BlogService.UpdateCommentAsync(commentId, commentRequest);
+            _editingCommentId = null;
+            _editingCommentContent = string.Empty;
+            await LoadDataAsync();
+            if (_editCommentForm != null)
+            {
+                await _editCommentForm.ResetAsync();
+                await _editCommentForm.Validate();
+            }
+            StateHasChanged();
+            Snackbar.Add("Comment updated successfully", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to update comment: {ex.Message}";
+            Snackbar.Add(_errorMessage, Severity.Error);
+        }
+    }
+
+    private void CancelEdit()
+    {
+        _editingCommentId = null;
+        _editingCommentContent = string.Empty;
+    }
+
+    private async Task DeleteComment(string commentId)
+    {
+        try
+        {
+            await BlogService.DeleteCommentAsync(commentId);
+            await LoadDataAsync();
+            StateHasChanged();
+            Snackbar.Add("Comment deleted successfully", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to delete comment: {ex.Message}";
+            Snackbar.Add(_errorMessage, Severity.Error);
+        }
+    }
+
+    private async Task RefreshComments()
+    {
+        await LoadDataAsync();
+        StateHasChanged();
+        Snackbar.Add("Comments refreshed", Severity.Info);
+    }
+
+    private async Task PublishPost()
+    {
+        if (_post == null || _currentUserId != _post.AuthorId) return;
+
+        try
+        {
+            _isLoading = true;
+            _post.Status = "Published";
+            _post.PublishedAt = DateTime.UtcNow;
+            await BlogService.UpdatePostAsync(Id, _post);
+            await LoadDataAsync();
+            StateHasChanged();
+            Snackbar.Add("Post published successfully", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to publish post: {ex.Message}";
+            Snackbar.Add(_errorMessage, Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private bool IsPublishDisabled() => _isLoading || _currentUserId != _post?.AuthorId;
+
+    private async Task ToggleReaction(string reactionType)
+    {
+        if (_currentUserId == null) return;
+
+        try
+        {
+            var userReaction = _reactions.FirstOrDefault(r => r.UserId == _currentUserId && r.Type == reactionType);
+            if (userReaction != null)
+            {
+                await BlogService.RemoveReactionAsync(Id, reactionType);
+                Snackbar.Add($"Removed {reactionType} reaction", Severity.Info);
+            }
+            else
+            {
+                await BlogService.AddReactionAsync(Id, reactionType);
+                Snackbar.Add($"Added {reactionType} reaction", Severity.Success);
+            }
+            await LoadDataAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to toggle reaction: {ex.Message}";
+            Snackbar.Add(_errorMessage, Severity.Error);
+        }
+    }
+}

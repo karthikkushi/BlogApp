@@ -1,0 +1,35 @@
+@using BlogAppFrontend.Services
+@inject UnsplashService UnsplashService
+@using MudBlazor
+
+@if (isLoading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (!string.IsNullOrEmpty(imageUrl))
+{
+    <img src="@imageUrl" alt="Related visual" style="width:100%;max-height:400px;object-fit:cover;border-radius:12px;" />
+    <div style="font-size:0.8em;color:#888;margin-top:4px;">
+        Photo from <a href="https://unsplash.com" target="_blank" rel="noopener">Unsplash</a>
+    </div>
+}
+else
+{
+    <MudText Color="Color.Secondary">No related image found.</MudText>
+}
+
+@code {
+    [Parameter] public string Title { get; set; }
+    [Parameter] public string Category { get; set; }
+    [Parameter] public IEnumerable<string> Tags { get; set; }
+
+    private string imageUrl;
+    private bool isLoading = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        imageUrl = await UnsplashService.GetImageUrlAsync(Title, Category, Tags);
+        isLoading = false;
+    }
+} 

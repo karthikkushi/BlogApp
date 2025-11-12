@@ -1,0 +1,210 @@
+﻿@page "/posts"
+@using BlogAppFrontend.Models
+@using BlogAppFrontend.Services
+@using Microsoft.AspNetCore.WebUtilities
+@using Microsoft.AspNetCore.Components.Authorization
+@layout MainLayout
+@inject BlogService BlogService
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+@inject AuthService AuthService
+
+<PageTitle>All Posts</PageTitle>
+
+<style>
+    .page-title {
+        font-weight: 700;
+        color: #1E3A8A;
+    }
+
+    .section-header {
+        background: linear-gradient(90deg, #2563EB, #1D4ED8);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        font-weight: 700;
+        font-size: 50px;
+    }
+
+    .post-card {
+        background: linear-gradient(145deg, #ffffff 0%, #f8faff 100%);
+        border-radius: 20px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+        cursor: pointer;
+        border: 1px solid rgba(0, 0, 0, 0.05);
+        height: 100%;
+    }
+
+    .post-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.15);
+    }
+
+    .loading-container {
+        background: linear-gradient(-45deg, #2563EB, #1D4ED8, #3B82F6, #60A5FA);
+        background-size: 400% 400%;
+        animation: gradientShift 4s ease infinite;
+        border-radius: 20px;
+        color: white;
+    }
+
+    .header-stack {
+        width: 100%;
+        display: flex;
+        justify-content: flex-start;
+    }
+
+    @@keyframes gradientShift {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+</style>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="px-4 py-6">
+    <div class="d-flex align-items-center mb-4">
+        <h3 class="section-header mb-0">✨ All Blog Posts</h3>
+        <MudMenu StartIcon="@Icons.Material.Filled.FilterList"
+                 Variant="Variant.Filled"
+                 Color="Color.Primary"
+                 Label="Filter"
+                 Dense="true"
+                 Class="ms-2">
+            <MudMenuItem OnClick="@(() => ChangeFilter("all"))">All Posts</MudMenuItem>
+            <MudMenuItem OnClick="@(() => ChangeFilter("my"))">My Posts</MudMenuItem>
+        </MudMenu>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_selectedCategoryName))
+    {
+        <MudText Typo="Typo.subtitle1" Color="Color.Primary" Class="mb-4">
+            Category: @_selectedCategoryName
+        </MudText>
+    }
+
+    @if (_isLoading)
+    {
+        <MudContainer Class="loading-container d-flex justify-center align-center pa-8" Style="height: 250px;">
+            <MudStack AlignItems="AlignItems.Center" Spacing="3">
+                <MudProgressCircular Color="Color.Surface" Indeterminate="true" Size="Size.Large" />
+                <MudText Typo="Typo.h6">Loading posts...</MudText>
+            </MudStack>
+        </MudContainer>
+    }
+    else if (!_posts.Any())
+    {
+        <MudPaper Elevation="0" Class="pa-8 post-card">
+            <MudStack AlignItems="AlignItems.Center" Spacing="3">
+                <MudIcon Icon="@Icons.Material.Filled.Article" Size="Size.Large" Color="Color.Secondary" />
+                <MudText Typo="Typo.h6" Color="Color.Secondary">
+                    No posts found.
+                </MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    Try exploring other categories or create your first post!
+                </MudText>
+            </MudStack>
+        </MudPaper>
+    }
+    else
+    {
+        <MudGrid Spacing="3">
+            @foreach (var post in _posts)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Class="post-card" @onclick="() => ViewPost(post.Id)">
+                        <MudCardHeader>
+                            <MudCardHeaderContent>
+                                <MudText Typo="Typo.h6" Class="text-truncate" Style="font-weight: 600; color: #1E3A8A;">
+                                    @post.Title
+                                </MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                                    @(post.PublishedAt?.ToString("MMM dd, yyyy") ?? "Draft")
+                                </MudText>
+                            </MudCardHeaderContent>
+                        </MudCardHeader>
+                        <MudCardContent>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary"
+                                     Style="line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
+                                @post.Content?.Substring(0, Math.Min(120, post.Content.Length))...
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+</MudContainer>
+
+@code {
+    private List<Post> _posts = new();
+    private List<Category> _categories = new();
+    private bool _isLoading = true;
+    private string _selectedCategoryName = "";
+    private string _filter = "all";
+    private string _currentUserId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isLoading = true;
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _currentUserId = await AuthService.GetUserIdAsync();
+        }
+
+        await LoadPosts();
+
+        _isLoading = false;
+    }
+
+    private async Task LoadPosts()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+
+        string categoryId = null;
+        if (query.TryGetValue("category", out var categoryValues))
+        {
+            categoryId = categoryValues.FirstOrDefault();
+        }
+
+        _categories = await BlogService.GetCategoriesAsync();
+
+        if (_filter == "my" && !string.IsNullOrEmpty(_currentUserId))
+        {
+            _posts = await BlogService.GetMyPostsAsync();
+        }
+        else
+        {
+            _posts = await BlogService.GetPostsAsync(categoryId: categoryId);
+        }
+
+        if (!string.IsNullOrEmpty(categoryId))
+        {
+            var category = _categories.FirstOrDefault(c => c.Id == categoryId);
+            _selectedCategoryName = category?.Name ?? "Unknown Category";
+        }
+        else
+        {
+            _selectedCategoryName = "";
+        }
+    }
+
+    private async Task ChangeFilter(string filter)
+    {
+        _filter = filter;
+        _isLoading = true;
+        StateHasChanged();
+        await LoadPosts();
+        _isLoading = false;
+        StateHasChanged();
+    }
+
+    void ViewPost(string id)
+    {
+        Navigation.NavigateTo($"/post/{id}");
+    }
+}

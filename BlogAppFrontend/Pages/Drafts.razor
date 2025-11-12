@@ -1,0 +1,352 @@
+﻿@page "/drafts"
+@using BlogAppFrontend.Models
+@using BlogAppFrontend.Services
+@inject BlogService BlogService
+@inject ISnackbar Snackbar
+@inject NavigationManager NavigationManager
+@inject HttpClient Http
+@using MudBlazor
+@using System.Text.Json
+
+<PageTitle>Drafts - BlogApp</PageTitle>
+
+<style>
+    .gradient-header {
+        background: linear-gradient(90deg, #2563EB, #1D4ED8);
+        padding: 24px;
+        border-radius: 16px 16px 0 0;
+        color: #fff;
+    }
+
+    .section-card {
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        margin-bottom: 24px;
+    }
+
+    .clickable-title {
+        color: #2563EB;
+        cursor: pointer;
+        font-weight: 500;
+        transition: color 0.2s;
+    }
+
+        .clickable-title:hover {
+            color: #1D4ED8;
+            text-decoration: underline;
+        }
+</style>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-6">
+
+    <!-- Gradient header -->
+    <MudPaper Class="gradient-header section-card">
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudText Typo="Typo.h4">My Drafts</MudText>
+                <MudText Typo="Typo.subtitle2" Class="mt-1">
+                    Manage your unpublished posts and drafts.
+                </MudText>
+            </MudItem>
+            <MudItem xs="12" sm="6" Class="d-flex justify-end align-center">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="@(() => NavigationManager.NavigateTo("/create-post"))">
+                    Create New Post
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @if (showEditForm)
+    {
+        <MudPaper Class="pa-4 section-card">
+            <MudText Typo="Typo.h6" Class="mb-3">Edit Draft</MudText>
+            <EditForm Model="editDraft">
+                <MudStack Spacing="2">
+                    <MudTextField @bind-Value="editDraft.Title" Label="Title" Variant="Variant.Outlined" Required="true" />
+                    <MudTextField @bind-Value="editDraft.Content" Label="Content" Variant="Variant.Outlined" Lines="8" Required="true" />
+                    <MudSelect T="string" Label="Category" Variant="Variant.Outlined" @bind-Value="editDraft.CategoryId" Required="true">
+                        @foreach (var category in categories)
+                        {
+                            <MudSelectItem T="string" Value="@category.Id">@category.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudTextField @bind-Value="tagsInput" Label="Tags (comma separated)" Variant="Variant.Outlined" />
+                    <MudStack Row="true" Spacing="2" Class="mt-2">
+                        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="@HandleEditSubmit">Save</MudButton>
+                        <MudButton Color="Color.Secondary" Variant="Variant.Outlined" Type="Button" OnClick="CancelEdit">Cancel</MudButton>
+                    </MudStack>
+                </MudStack>
+            </EditForm>
+        </MudPaper>
+    }
+
+    @if (_isLoading)
+    {
+        <MudContainer Class="d-flex justify-center align-center" Style="height: 200px;">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+        </MudContainer>
+    }
+    else if (!_filteredDrafts.Any())
+    {
+        <MudPaper Elevation="2" Class="pa-4 section-card">
+            <MudText Align="Align.Center" Color="Color.Secondary">
+                No drafts available.
+            </MudText>
+        </MudPaper>
+    }
+    else
+    {
+        <MudPaper Class="pa-4 section-card">
+            <MudText Typo="Typo.h6" Class="mb-3">Your Drafts</MudText>
+
+            <MudTable Items="_filteredDrafts" Hover="true" Striped="true" Dense="true">
+                <HeaderContent>
+                    <MudTh>Title</MudTh>
+                    <MudTh>Category</MudTh>
+                    <MudTh>Actions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Title">
+                        <MudText Class="clickable-title" @onclick="() => EditDraftInline(context)">
+                            @context.Title
+                        </MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Category">@GetCategoryName(context.CategoryId)</MudTd>
+                    <MudTd DataLabel="Actions">
+                        <MudStack Row="true" Spacing="1">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                           Color="Color.Primary"
+                                           Size="Size.Small"
+                                           OnClick="@(() => EditDraftInline(context))" />
+
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Color="Color.Error"
+                                           Size="Size.Small"
+                                           Disabled="@string.IsNullOrEmpty(context.Id)"
+                                           OnClick="@(() => LogAndDelete(context))" />
+
+                            <MudIconButton Icon="@Icons.Material.Filled.Publish"
+                                           Color="Color.Success"
+                                           Size="Size.Small"
+                                           Disabled="@string.IsNullOrEmpty(context.Id)"
+                                           OnClick="@(() => LogAndPublish(context))" />
+                        </MudStack>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        No drafts found.
+                    </MudText>
+                </NoRecordsContent>
+            </MudTable>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    private List<Post> _drafts = new();
+    private List<Post> _filteredDrafts = new();
+    private List<Category> categories = new();
+    private bool _isLoading = true;
+    private bool showEditForm = false;
+    private Post editDraft = new();
+    private string tagsInput = string.Empty;
+
+    private string _selectedCategoryId = "All";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDrafts();
+        categories = await BlogService.GetCategoriesAsync();
+    }
+
+    private async Task LoadDrafts()
+    {
+        try
+        {
+            var response = await BlogService.GetDraftsAsync();
+            _drafts = response;
+            _filteredDrafts = _drafts;
+            var rawResponse = await Http.GetStringAsync("posts/drafts");
+            Console.WriteLine($"Raw response from /api/posts/drafts: {rawResponse}");
+            Console.WriteLine($"Loaded {_drafts.Count} drafts. First ID: {_drafts.FirstOrDefault()?.Id}");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading drafts: {ex.Message}", Severity.Error);
+            Console.WriteLine($"LoadDrafts Exception: {ex}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void EditDraftInline(Post draft)
+    {
+        if (string.IsNullOrEmpty(draft.Id))
+        {
+            Snackbar.Add("Cannot edit draft: Invalid draft ID", Severity.Error);
+            Console.WriteLine("EditDraftInline: Draft ID is null or empty");
+            return;
+        }
+
+        editDraft = new Post
+            {
+                Id = draft.Id,
+                Title = draft.Title ?? string.Empty,
+                Content = draft.Content ?? string.Empty,
+                CategoryId = draft.CategoryId,
+                Tags = draft.Tags != null ? new List<string>(draft.Tags) : new List<string>(),
+                AuthorId = draft.AuthorId,
+                AuthorName = draft.AuthorName,
+                Status = "Draft",
+                CreatedAt = draft.CreatedAt
+            };
+
+        tagsInput = string.Join(", ", editDraft.Tags ?? new List<string>());
+        Console.WriteLine($"Editing draft with ID: {editDraft.Id}");
+        Console.WriteLine($"Draft title: {editDraft.Title}");
+        Console.WriteLine($"Draft content length: {editDraft.Content?.Length ?? 0}");
+        Console.WriteLine($"Full draft object: {JsonSerializer.Serialize(draft)}");
+        showEditForm = true;
+    }
+
+    private async Task HandleEditSubmit()
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(editDraft.Title?.Trim()))
+            {
+                Snackbar.Add("Title is required.", Severity.Error);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(editDraft.Content?.Trim()))
+            {
+                Snackbar.Add("Content is required.", Severity.Error);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(editDraft.Id))
+            {
+                Snackbar.Add("Invalid draft ID. Cannot update.", Severity.Error);
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(tagsInput))
+            {
+                editDraft.Tags = tagsInput.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(t => t.Trim())
+                    .Where(t => !string.IsNullOrEmpty(t))
+                    .ToList();
+            }
+            else
+            {
+                editDraft.Tags = new List<string>();
+            }
+
+            editDraft.Title = editDraft.Title.Trim();
+            editDraft.Content = editDraft.Content.Trim();
+
+            Console.WriteLine($"Submitting edit for draft ID: {editDraft.Id}");
+            Console.WriteLine($"Title: {editDraft.Title}");
+            Console.WriteLine($"Content length: {editDraft.Content.Length}");
+            Console.WriteLine($"CategoryId: {editDraft.CategoryId}");
+            Console.WriteLine($"Tags: {string.Join(", ", editDraft.Tags)}");
+
+            await BlogService.UpdateDraftAsync(editDraft.Id, editDraft);
+            Snackbar.Add("Draft updated successfully!", Severity.Success);
+            await LoadDrafts();
+            showEditForm = false;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error updating draft: {ex.Message}", Severity.Error);
+            Console.WriteLine($"HandleEditSubmit Exception: {ex}");
+            if (ex.InnerException != null)
+            {
+                Console.WriteLine($"Inner exception: {ex.InnerException.Message}");
+            }
+        }
+    }
+
+    private void CancelEdit()
+    {
+        showEditForm = false;
+    }
+
+    private async Task LogAndPublish(Post post)
+    {
+        if (string.IsNullOrEmpty(post.Id))
+        {
+            Snackbar.Add("Invalid draft ID. Please contact support.", Severity.Error);
+            Console.WriteLine("PublishDraft: ID is null or empty, Full post: " + JsonSerializer.Serialize(post));
+            return;
+        }
+        Console.WriteLine($"Publishing draft with ID: {post.Id}");
+        var baseUrl = NavigationManager.BaseUri.TrimEnd('/');
+        var url = $"{baseUrl}api/posts/draft/{post.Id}/publish";
+        Console.WriteLine($"Publishing draft, calling URL: {url}");
+        await PublishDraft(post.Id);
+    }
+
+    private async Task LogAndDelete(Post post)
+    {
+        if (string.IsNullOrEmpty(post.Id))
+        {
+            Snackbar.Add("Invalid draft ID. Please contact support.", Severity.Error);
+            Console.WriteLine("DeleteDraft: ID is null or empty, Full post: " + JsonSerializer.Serialize(post));
+            return;
+        }
+        Console.WriteLine($"Deleting draft with ID: {post.Id}");
+        var baseUrl = NavigationManager.BaseUri.TrimEnd('/');
+        var url = $"{baseUrl}api/posts/draft/{post.Id}";
+        Console.WriteLine($"Deleting draft, calling URL: {url}");
+        await DeleteDraft(post.Id);
+    }
+
+    private async Task PublishDraft(string id)
+    {
+        try
+        {
+            await BlogService.PublishDraftAsync(id);
+            Snackbar.Add("Draft published successfully!", Severity.Success);
+            await LoadDrafts();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error publishing draft: {ex.Message}", Severity.Error);
+            Console.WriteLine($"PublishDraft Exception: {ex}");
+        }
+    }
+
+    private async Task DeleteDraft(string id)
+    {
+        try
+        {
+            await BlogService.DeleteDraftAsync(id);
+            Snackbar.Add("Draft deleted successfully!", Severity.Success);
+            await LoadDrafts();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error deleting draft: {ex.Message}", Severity.Error);
+            Console.WriteLine($"DeleteDraft Exception: {ex}");
+        }
+    }
+
+    private string GetCategoryName(string categoryId)
+    {
+        var cat = categories.FirstOrDefault(c => c.Id == categoryId);
+        return cat?.Name ?? "Unknown";
+    }
+
+    private void DebugEditDraft()
+    {
+        Console.WriteLine($"DEBUG: editDraft = {System.Text.Json.JsonSerializer.Serialize(editDraft)}");
+    }
+}

@@ -1,0 +1,483 @@
+﻿@page "/profile/{UserId?}"
+@using BlogAppFrontend.Models
+@using BlogAppFrontend.Services
+@using Microsoft.AspNetCore.Components.Forms
+@using MudBlazor
+@using BlogAppFrontend
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.JSInterop
+@layout MainLayout
+@inject BlogService BlogService
+@inject AuthService AuthService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IJSRuntime JSRuntime
+@inject SupabaseImageUploader SupabaseUploader
+
+<PageTitle>Profile</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="ma-0 pa-0">
+    @if (isLoading)
+    {
+        <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" Class="d-flex justify-center align-center" Style="height: 50vh;" />
+    }
+    else if (!isAuthenticated)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" Elevation="2" Class="my-4 mx-auto" Style="max-width: 600px;">
+            @errorMessage
+            <MudButton Variant="Variant.Text" Color="Color.Inherit" OnClick="@(() => Navigation.NavigateTo("/login"))" Class="mt-2">Sign In</MudButton>
+        </MudAlert>
+    }
+    else if (profile == null)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Filled" Elevation="2" Class="my-4 mx-auto" Style="max-width: 600px;">Please complete your profile.</MudAlert>
+    }
+    else
+    {
+        <MudPaper Elevation="3" Class="mud-border-radius-lg pa-0">
+            <!-- Cover Photo + Profile Picture -->
+            <div style="position: relative;">
+                <MudImage Src="@(string.IsNullOrEmpty(profileRequest.CoverPhotoUrl) ? "https://via.placeholder.com/1200x300" : profileRequest.CoverPhotoUrl)"
+                          Alt="Cover Photo"
+                          ObjectFit="ObjectFit.Cover"
+                          Style="width: 100%; height: 250px; object-position: center;"
+                          Class="w-100" />
+
+                <div class="profile-header-overlay">
+                    <MudImage Src="@(string.IsNullOrEmpty(profile.ProfilePictureUrl) ? "https://via.placeholder.com/150" : profile.ProfilePictureUrl)"
+                              Alt="Profile Picture"
+                              ObjectFit="ObjectFit.Cover"
+                              Width="150"
+                              Height="150"
+                              Class="rounded-circle mud-elevation-4"
+                              Style="position: absolute; bottom: -75px; left: 20px; border: 4px solid white;" />
+                    @if (UserId != currentUserId && isAuthenticated)
+                    {
+                        
+                    }
+                </div>
+            </div>
+
+            <!-- Content Section -->
+            <MudGrid Class="mt-12 pa-6">
+                <MudItem xs="12" md="4">
+                    <!-- Profile Info & Edit -->
+                    <MudText Typo="Typo.h5" Color="Color.Primary" Class="mb-2">@profile.Username</MudText>
+                    <MudText Typo="Typo.body2">@profile.Bio</MudText>
+
+                    <MudStack Row="true" Spacing="4" Class="mt-4">
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="ShowFollowers">
+                            <MudText><strong>@followersCount</strong> Followers</MudText>
+                        </MudButton>
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="ShowFollowing">
+                            <MudText><strong>@followingCount</strong> Following</MudText>
+                        </MudButton>
+                    </MudStack>
+
+                    @if (isViewingFollowers)
+                    {
+                        <MudPaper Elevation="2" Class="pa-4 mt-4">
+                            <MudText Typo="Typo.h6">Followers</MudText>
+                            @if (followers.Any())
+                            {
+                                <MudList T="Follower">
+                                    @foreach (var follower in followers)
+                                    {
+                                        <MudListItem T="Follower">
+                                            <MudText>@follower.FollowerUsername</MudText>
+                                        </MudListItem>
+                                    }
+                                </MudList>
+                            }
+                            else
+                            {
+                                <MudText Color="Color.Secondary">No followers yet.</MudText>
+                            }
+                        </MudPaper>
+                    }
+                    else if (isViewingFollowing)
+                    {
+                        <MudPaper Elevation="2" Class="pa-4 mt-4">
+                            <MudText Typo="Typo.h6">Following</MudText>
+                            @if (following.Any())
+                            {
+                                <MudList T="Follower">
+                                    @foreach (var follow in following)
+                                    {
+                                        <MudListItem T="Follower">
+                                            <MudText>@follow.FollowingUsername</MudText>
+                                        </MudListItem>
+                                    }
+                                </MudList>
+                            }
+                            else
+                            {
+                                <MudText Color="Color.Secondary">Not following anyone yet.</MudText>
+                            }
+                        </MudPaper>
+                    }
+
+                    @if (UserId == currentUserId)
+                    {
+                        <MudText Typo="Typo.subtitle1" Class="mt-4">Edit Profile</MudText>
+                        <MudForm @ref="form" @bind-IsValid="@isValid">
+                            <MudTextField T="string" Label="Username" @bind-Value="profileRequest.Username" Required="true" RequiredError="Username is required" Validation="@(new Func<string, string>(ValidateUsername))" Variant="Variant.Outlined" Class="mb-4" />
+                            <MudTextField T="string" Label="Bio" @bind-Value="profileRequest.Bio" Lines="4" Variant="Variant.Outlined" Class="mb-4" />
+
+                            <MudText Typo="Typo.subtitle1" Class="mt-4">Profile Picture</MudText>
+                            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                                <MudImage Src="@(string.IsNullOrEmpty(profileRequest.ProfilePictureUrl) ? "https://via.placeholder.com/150" : profileRequest.ProfilePictureUrl)"
+                                          Alt="Profile Picture"
+                                          Width="120"
+                                          Height="120"
+                                          ObjectFit="ObjectFit.Cover"
+                                          Class="mr-3 mud-border-radius-4 image-preview" />
+                                <MudIconButton Icon="@Icons.Material.Filled.PhotoCamera"
+                                               Color="Color.Primary"
+                                               Size="Size.Large"
+                                               OnClick="@(() => TriggerProfilePicUpload())"
+                                               Title="Upload Profile Picture"
+                                               Class="upload-button" />
+                            </MudStack>
+
+                            <MudText Typo="Typo.subtitle1" Class="mt-4">Cover Photo</MudText>
+                            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                                <MudImage Src="@(string.IsNullOrEmpty(profileRequest.CoverPhotoUrl) ? "https://via.placeholder.com/300x150" : profileRequest.CoverPhotoUrl)"
+                                          Alt="Cover Photo"
+                                          Width="150"
+                                          Height="75"
+                                          ObjectFit="ObjectFit.Cover"
+                                          Class="mr-3 mud-border-radius-4 image-preview" />
+                                <MudIconButton Icon="@Icons.Material.Filled.PhotoCamera"
+                                               Color="Color.Primary"
+                                               Size="Size.Large"
+                                               OnClick="@(() => TriggerCoverPhotoUpload())"
+                                               Title="Upload Cover Photo"
+                                               Class="upload-button" />
+                            </MudStack>
+
+                            <InputFile @ref="profilePicInputRef"
+                                       id="profilePicInput"
+                                       OnChange="OnProfilePicSelected"
+                                       accept=".jpg,.jpeg,.png"
+                                       Style="display: none;" />
+                            <InputFile @ref="coverPhotoInputRef"
+                                       id="coverPhotoInput"
+                                       OnChange="OnCoverPhotoSelected"
+                                       accept=".jpg,.jpeg,.png"
+                                       Style="display: none;" />
+
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="UpdateProfile" Class="mt-6" Size="Size.Large" Disabled="!isValid" StartIcon="@Icons.Material.Filled.Save">Update Profile</MudButton>
+                        </MudForm>
+                    }
+                </MudItem>
+
+                <MudItem xs="12" md="8">
+                    <!-- Posts -->
+                    <MudPaper Elevation="0" Class="pa-0">
+                        <MudText Typo="Typo.h4" Color="Color.Primary" Class="mb-4">Posts</MudText>
+                        @if (userPosts.Any())
+                        {
+                            <MudGrid>
+                                @foreach (var post in userPosts.Take(6))
+                                {
+                                    <MudItem xs="12" sm="6">
+                                        <MudCard Elevation="2" Class="facebook-post">
+                                            <MudCardHeader>
+                                                <MudText Typo="Typo.h6">@post.Title</MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">@post.CreatedAt.ToString("MMM dd, yyyy hh:mm tt")</MudText>
+                                            </MudCardHeader>
+                                            <MudCardContent>
+                                                <MudText Typo="Typo.body2" Class="line-clamp-3">@post.Content</MudText>
+                                            </MudCardContent>
+                                            <MudCardActions>
+                                                <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="@(() => NavigateToPost(post.Id))" EndIcon="@Icons.Material.Filled.ArrowForward">Read More</MudButton>
+                                            </MudCardActions>
+                                        </MudCard>
+                                    </MudItem>
+                                }
+                            </MudGrid>
+                        }
+                        else
+                        {
+                            <MudAlert Severity="Severity.Info" Variant="Variant.Filled" Elevation="2" Class="my-4">No posts yet.</MudAlert>
+                        }
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    }
+    </MudContainer>
+
+    <style>
+        /* Gradient overlay over the cover photo */
+        .cover-gradient {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to right, rgba(37,99,235,0.6), rgba(29,78,216,0.6));
+            z-index: 1;
+        }
+
+        /* Overlay container for profile header elements */
+        .profile-header-overlay {
+            position: relative;
+            margin-top: -75px;
+            z-index: 2;
+            padding: 0 20px;
+        }
+
+        .profile-username {
+            color: #ffffff;
+            font-weight: bold;
+            font-size: 28px;
+        }
+
+        .profile-bio {
+            color: #f1f5f9;
+            max-width: 700px;
+        }
+
+        .profile-paper {
+            border-radius: 16px;
+        }
+
+        .profile-picture-frame {
+            border: 4px solid #ffffff;
+            border-radius: 50%;
+            transition: box-shadow 0.3s ease;
+        }
+
+            .profile-picture-frame:hover {
+                box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+            }
+
+        .facebook-post {
+            border-radius: 12px;
+            border: 1px solid #e0e0e0;
+            transition: box-shadow 0.3s ease;
+        }
+
+            .facebook-post:hover {
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+            }
+
+        .line-clamp-3 {
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+    </style>
+
+@code {
+    [Parameter]
+    public string UserId { get; set; }
+    private MudForm form;
+    private bool isValid;
+    private bool isAuthenticated;
+    private bool isLoading = true;
+    private string errorMessage;
+    private UserProfile profile;
+    private UserProfileRequest profileRequest = new() { ProfilePictureUrl = string.Empty, CoverPhotoUrl = string.Empty };
+    private List<Post> userPosts = new();
+    private string currentUserId;
+    private IBrowserFile selectedProfilePic;
+    private IBrowserFile selectedCoverPhoto;
+    private InputFile profilePicInputRef;
+    private InputFile coverPhotoInputRef;
+    private List<Follower> followers = new();
+    private List<Follower> following = new();
+    private int followersCount;
+    private int followingCount;
+    private bool isViewingFollowers;
+    private bool isViewingFollowing;
+    private bool isFollowing;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        isAuthenticated = authState.User.Identity?.IsAuthenticated ?? false;
+
+        if (!isAuthenticated)
+        {
+            errorMessage = "Please sign in to view your profile.";
+            isLoading = false;
+            return;
+        }
+
+        try
+        {
+            currentUserId = await AuthService.GetUserIdAsync();
+            UserId = UserId ?? currentUserId;
+
+            profile = await BlogService.GetUserProfileAsync(UserId);
+            if (profile != null)
+            {
+                profileRequest.Id = profile.Id;
+                profileRequest.Username = profile.Username;
+                profileRequest.Bio = profile.Bio;
+                profileRequest.ProfilePictureUrl = profile.ProfilePictureUrl ?? string.Empty;
+                profileRequest.CoverPhotoUrl = profile.CoverPhotoUrl ?? string.Empty;
+            }
+            else
+            {
+                profileRequest.Id = currentUserId;
+            }
+
+            userPosts = await BlogService.GetUserPostsAsync(UserId);
+            followers = await BlogService.GetFollowersAsync();
+            following = await BlogService.GetFollowingAsync();
+            followersCount = followers.Count;
+            followingCount = following.Count;
+
+            if (UserId != currentUserId)
+            {
+                isFollowing = followers.Any(f => f.FollowerId == currentUserId);
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading profile: {ex.Message}";
+            Snackbar.Add(errorMessage, Severity.Error);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task ToggleFollow()
+    {
+        try
+        {
+            if (isFollowing)
+            {
+                await BlogService.UnfollowUserAsync(UserId);
+                Snackbar.Add("Unfollowed user.", Severity.Success);
+            }
+            else
+            {
+                await BlogService.FollowUserAsync(UserId);
+                Snackbar.Add("Followed user!", Severity.Success);
+            }
+            isFollowing = !isFollowing;
+            followers = await BlogService.GetFollowersAsync();
+            followersCount = followers.Count;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void ShowFollowers()
+    {
+        isViewingFollowers = true;
+        isViewingFollowing = false;
+        StateHasChanged();
+    }
+
+    private void ShowFollowing()
+    {
+        isViewingFollowers = false;
+        isViewingFollowing = true;
+        StateHasChanged();
+    }
+
+    private async Task UpdateProfile()
+    {
+        await form.Validate();
+        if (!isValid)
+        {
+            Snackbar.Add("Please fill out all required fields correctly.", Severity.Error);
+            return;
+        }
+
+        try
+        {
+            if (selectedProfilePic != null)
+                profileRequest.ProfilePictureUrl = await SupabaseUploader.UploadImageAsync(selectedProfilePic);
+
+            if (selectedCoverPhoto != null)
+                profileRequest.CoverPhotoUrl = await SupabaseUploader.UploadImageAsync(selectedCoverPhoto, "cover-photos");
+            else if (profile != null)
+                profileRequest.CoverPhotoUrl = profile.CoverPhotoUrl;
+
+            profileRequest.Id = currentUserId;
+
+            await BlogService.CreateOrUpdateProfileAsync(profileRequest);
+            profile = await BlogService.GetUserProfileAsync(currentUserId);
+
+            AuthService.NotifyProfileUpdated();
+
+            Snackbar.Add("Profile updated successfully!", Severity.Success);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error updating profile: {ex.Message}";
+            Snackbar.Add(errorMessage, Severity.Error);
+        }
+    }
+
+    private async Task OnProfilePicSelected(InputFileChangeEventArgs e)
+    {
+        selectedProfilePic = e.File;
+        if (selectedProfilePic != null)
+        {
+            Snackbar.Add("Profile picture selected! Click 'Update Profile' to save.", Severity.Info);
+            var stream = selectedProfilePic.OpenReadStream(maxAllowedSize: 10_000_000);
+            var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            ms.Position = 0;
+            var bytes = ms.ToArray();
+            var base64 = Convert.ToBase64String(bytes);
+            profileRequest.ProfilePictureUrl = $"data:{selectedProfilePic.ContentType};base64,{base64}";
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnCoverPhotoSelected(InputFileChangeEventArgs e)
+    {
+        selectedCoverPhoto = e.File;
+        if (selectedCoverPhoto != null)
+        {
+            Snackbar.Add("Cover photo selected! Click 'Update Profile' to save.", Severity.Info);
+            var stream = selectedCoverPhoto.OpenReadStream(maxAllowedSize: 10_000_000);
+            var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            ms.Position = 0;
+            var bytes = ms.ToArray();
+            var base64 = Convert.ToBase64String(bytes);
+            profileRequest.CoverPhotoUrl = $"data:{selectedCoverPhoto.ContentType};base64,{base64}";
+            StateHasChanged();
+        }
+    }
+
+    private void NavigateToPost(string postId)
+    {
+        Navigation.NavigateTo($"/post/{postId}");
+    }
+
+    private string ValidateUsername(string username)
+    {
+        if (string.IsNullOrWhiteSpace(username)) return "Username is required.";
+        if (username.Length < 3) return "Username must be at least 3 characters long.";
+        return null;
+    }
+
+    private async void TriggerProfilePicUpload()
+    {
+        await JSRuntime.InvokeVoidAsync("eval", $"document.getElementById('profilePicInput').click()");
+    }
+
+    private async void TriggerCoverPhotoUpload()
+    {
+        await JSRuntime.InvokeVoidAsync("eval", $"document.getElementById('coverPhotoInput').click()");
+    }
+}

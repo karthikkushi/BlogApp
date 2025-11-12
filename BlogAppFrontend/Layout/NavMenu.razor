@@ -1,0 +1,180 @@
+﻿@using BlogAppFrontend.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@inject NavigationManager Navigation
+@inject AuthService AuthService
+@inject BlogService BlogService
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthStateProvider
+
+@implements IDisposable
+
+<MudNavMenu Class="@NavMenuCssClass">
+    @if (isLoaded && isAuthenticated)
+    {
+        @if (DrawerOpen)
+        {
+            <MudPaper Class="profile-section" Elevation="0">
+                <div class="profile-avatar-img"
+                     style="background-image: url('@profilePictureUrl')"
+                     @onclick="@(() => Navigation.NavigateTo($"/profile/{currentUserId}"))">
+                </div>
+            </MudPaper>
+        }
+        else
+        {
+            <img src="@profilePictureUrl"
+                 class="mini-profile-img"
+                 @onclick="@(() => Navigation.NavigateTo($"/profile/{currentUserId}"))" />
+
+        }
+    }
+
+    <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">Home</MudNavLink>
+    <MudNavLink Href="posts" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Article">Posts</MudNavLink>
+    <AuthorizeView>
+        <Authorized>
+            <MudNavLink Href="categories" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Category">Categories</MudNavLink>
+            <MudNavLink Href="users" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Groups">People</MudNavLink>
+            <MudNavLink Href="drafts" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Drafts">Drafts</MudNavLink>
+        </Authorized>
+    </AuthorizeView>
+</MudNavMenu>
+
+<style>
+    .modern-navmenu {
+        background: linear-gradient(135deg, var(--mud-palette-appbar-background), var(--mud-palette-surface));
+        height: 100vh;
+        padding: 24px 16px;
+        overflow-x: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+        .modern-navmenu.mini {
+            width: 70px;
+            align-items: center;
+            padding: 12px 6px;
+            overflow: visible;
+        }
+
+    .profile-section {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin-bottom: 32px;
+        padding: 16px;
+        border-radius: 12px;
+        background: transparent;
+    }
+
+    .profile-avatar-img {
+        width: 72px;
+        height: 72px;
+        border-radius: 50%;
+        border: 3px solid var(--mud-palette-primary);
+        margin-bottom: 12px;
+        cursor: pointer;
+        transition: box-shadow 0.3s, transform 0.2s;
+        background-size: cover;
+        background-position: center;
+        background-color: var(--mud-palette-surface);
+    }
+
+        .profile-avatar-img:hover {
+            box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);
+            transform: scale(1.05);
+        }
+
+    .mini-profile-img {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 2px solid var(--mud-palette-primary);
+        margin-bottom: 12px;
+        cursor: pointer;
+        transition: transform 0.2s ease;
+    }
+
+        .mini-profile-img:hover {
+            transform: scale(1.05);
+        }
+
+    .mud-nav-link {
+        border-radius: 8px;
+        margin: 4px 0;
+        transition: background 0.2s, color 0.2s;
+        padding: 10px 12px;
+        font-weight: 500;
+        color: var(--mud-palette-text-primary);
+        display: flex;
+        align-items: center;
+    }
+
+        .mud-nav-link:hover {
+            background: var(--mud-palette-surface);
+            color: var(--mud-palette-primary);
+        }
+
+        .mud-nav-link.mud-nav-link-active {
+            background: var(--mud-palette-primary);
+            color: var(--mud-palette-text-primary);
+            font-weight: 600;
+        }
+</style>
+
+
+@code {
+    private string NavMenuCssClass => DrawerOpen ? "modern-navmenu" : "modern-navmenu mini";
+    [CascadingParameter] public bool DrawerOpen { get; set; }
+
+    private const string DefaultProfileUrl = "https://via.placeholder.com/64x64.png?text=U";
+    private string profilePictureUrl = DefaultProfileUrl;
+    private string currentUserId = "";
+    private bool isLoaded = false;
+    private bool isAuthenticated = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        AuthStateProvider.AuthenticationStateChanged += OnAuthStateChanged;
+        await LoadUserAsync();
+    }
+
+    private void OnAuthStateChanged(Task<AuthenticationState> task)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await LoadUserAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadUserAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        isAuthenticated = user.Identity?.IsAuthenticated ?? false;
+
+        if (isAuthenticated)
+        {
+            currentUserId = await AuthService.GetUserIdAsync();
+            var profile = await BlogService.GetUserProfileAsync(currentUserId);
+            profilePictureUrl = !string.IsNullOrEmpty(profile?.ProfilePictureUrl)
+                ? profile.ProfilePictureUrl
+                : DefaultProfileUrl;
+        }
+        else
+        {
+            profilePictureUrl = DefaultProfileUrl;
+            currentUserId = "";
+        }
+
+        isLoaded = true;
+    }
+
+    public void Dispose()
+    {
+        AuthStateProvider.AuthenticationStateChanged -= OnAuthStateChanged;
+    }
+}

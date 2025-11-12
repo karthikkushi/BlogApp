@@ -1,0 +1,163 @@
+﻿@page "/signup"
+@using BlogAppFrontend.Services
+@using BlogAppFrontend.Models
+@using System.ComponentModel.DataAnnotations
+@inject AuthService AuthService
+@inject BlogService BlogService
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@using MudBlazor
+
+<PageTitle>Sign Up - BlogApp</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-16">
+    <MudPaper Elevation="3" Class="pa-8">
+        <MudContainer Class="d-flex flex-column align-center">
+            <MudIcon Icon="@Icons.Material.Filled.PersonAdd"
+                     Color="Color.Primary"
+                     Size="Size.Large"
+                     Class="mb-4" />
+            <MudText Typo="Typo.h4" Class="mb-2">Create Account</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-8">
+                Join our community and start sharing your stories
+            </MudText>
+        </MudContainer>
+
+        <MudForm @ref="form" @bind-IsValid="@isValid">
+            <MudTextField @bind-Value="signUpRequest.Username"
+                          Label="Username"
+                          Variant="Variant.Outlined"
+                          Required="true"
+                          RequiredError="Username is required"
+                          MinLength="3"
+                          MaxLength="50"
+                          Counter="50"
+                          Class="mb-4" />
+
+            <MudTextField @bind-Value="signUpRequest.Email"
+                          Label="Email"
+                          Variant="Variant.Outlined"
+                          Required="true"
+                          RequiredError="Email is required"
+                          InputType="InputType.Email"
+                          Validation="@(new EmailAddressAttribute() { ErrorMessage = "Invalid email format" })"
+                          Class="mb-4" />
+
+            <MudTextField @bind-Value="signUpRequest.Password"
+                          Label="Password"
+                          Variant="Variant.Outlined"
+                          Required="true"
+                          RequiredError="Password is required"
+                          InputType="InputType.Password"
+                          MinLength="6"
+                          MaxLength="50"
+                          Counter="50"
+                          Class="mb-4" />
+
+            <MudTextField @bind-Value="confirmPassword"
+                          Label="Confirm Password"
+                          Variant="Variant.Outlined"
+                          Required="true"
+                          RequiredError="Please confirm your password"
+                          InputType="InputType.Password"
+                          MinLength="6"
+                          MaxLength="50"
+                          Counter="50"
+                          Class="mb-4" />
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       FullWidth="true"
+                       OnClick="SignUpUser"
+                       Disabled="!isValid"
+                       StartIcon="@Icons.Material.Filled.PersonAdd"
+                       Class="mb-4">
+                Create Account
+            </MudButton>
+
+            <MudDivider Class="my-4" />
+
+            <MudText Typo="Typo.body2" Align="Align.Center" Class="mb-4">
+                Already have an account?
+            </MudText>
+
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Primary"
+                       FullWidth="true"
+                       OnClick="@(() => Navigation.NavigateTo("/signin"))"
+                       StartIcon="@Icons.Material.Filled.Login">
+                Sign In
+            </MudButton>
+        </MudForm>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private MudForm form;
+    private bool isValid;
+    private SignUpRequest signUpRequest = new();
+    private string confirmPassword;
+
+    private async Task SignUpUser()
+    {
+        await form.Validate();
+
+        if (!isValid)
+            return;
+
+        if (signUpRequest.Password != confirmPassword)
+        {
+            Snackbar.Add("Passwords do not match.", Severity.Error);
+            return;
+        }
+
+        try
+        {
+            var result = await AuthService.SignUpAsync(
+                signUpRequest.Email,
+                signUpRequest.Password,
+                signUpRequest.Username
+            );
+
+            if (result == null)
+            {
+                Snackbar.Add("Check your email for a confirmation link", Severity.Success);
+                Navigation.NavigateTo("/signin");
+                return;
+            }
+
+            var userId = result.UserId;
+
+            if (string.IsNullOrEmpty(userId))
+            {
+                Snackbar.Add("User ID missing after signup.", Severity.Error);
+                return;
+            }
+
+            var profileRequest = new UserProfileRequest
+                {
+                    Id = userId,
+                    Username = signUpRequest.Username,
+                    Bio = "",
+                    ProfilePictureUrl = "",
+                    CoverPhotoUrl = ""
+                };
+
+            await BlogService.CreateOrUpdateProfileAsync(profileRequest);
+
+            Snackbar.Add("Account and profile created successfully!", Severity.Success);
+            Navigation.NavigateTo("/signin");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Signup failed: " + ex.Message, Severity.Error);
+        }
+    }
+
+    private class SignUpRequest
+    {
+        public string Username { get; set; }
+        public string Email { get; set; }
+        public string Password { get; set; }
+    }
+}

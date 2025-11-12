@@ -1,0 +1,74 @@
+﻿@page "/following"
+@using BlogAppFrontend.Models
+@using BlogAppFrontend.Services
+@using MudBlazor
+@inject BlogService BlogService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+
+<PageTitle>Following</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <MudText Typo="Typo.h4" Color="Color.Primary" Class="mb-4">Following</MudText>
+    @if (isLoading)
+    {
+        <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" Class="d-flex justify-center align-center" Style="height: 50vh;" />
+    }
+    else if (!isAuthenticated)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" Elevation="2" Class="my-4 mx-auto" Style="max-width: 600px;">
+            Please sign in to view who you are following.
+        </MudAlert>
+    }
+    else if (!following.Any())
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Filled" Elevation="2" Class="my-4">Not following anyone yet.</MudAlert>
+    }
+    else
+    {
+        <MudPaper Elevation="3" Class="pa-4">
+            <MudList T="Follower">
+                @foreach (var follow in following)
+                {
+                    <MudListItem T="Follower">
+                        <MudText>@follow.FollowingUsername</MudText>
+                    </MudListItem>
+                }
+            </MudList>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    private List<Follower> following = new();
+    private bool isLoading = true;
+    private bool isAuthenticated;
+    private string errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        isAuthenticated = authState.User.Identity?.IsAuthenticated ?? false;
+
+        if (!isAuthenticated)
+        {
+            errorMessage = "Please sign in to view who you are following.";
+            isLoading = false;
+            return;
+        }
+
+        try
+        {
+            following = await BlogService.GetFollowingAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading following: {ex.Message}";
+            Snackbar.Add(errorMessage, Severity.Error);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}

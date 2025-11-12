@@ -1,0 +1,276 @@
+﻿@page "/create-post"
+@using BlogAppFrontend.Models
+@using BlogAppFrontend.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@inject BlogService BlogService
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IDialogService DialogService
+
+<PageTitle>Create Post - BlogApp</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    @if (isLoading)
+    {
+        <MudContainer Class="d-flex justify-center align-center" Style="height: 200px;">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+        </MudContainer>
+    }
+    else if (!isAuthenticated)
+    {
+        <MudPaper Elevation="3" Class="pa-6">
+            <MudText Typo="Typo.h6">
+                Please <MudLink Href="/signin">sign in</MudLink> to create a post.
+            </MudText>
+        </MudPaper>
+    }
+    else
+    {
+        <MudPaper Elevation="3" Class="pa-6 mb-6" Style="border-radius: 16px;">
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.h4">Create New Post</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                        Share your thoughts with the community
+                    </MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6" Class="d-flex justify-end align-center">
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.ArrowBack"
+                               OnClick="@GoToPosts">
+                        Back to Posts
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <MudPaper Elevation="1" Class="pa-6" Style="border-radius: 16px;">
+            <MudForm @ref="form" @bind-IsValid="@isValid">
+                <MudGrid GutterSize="3">
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="post.Title"
+                                      Label="Title"
+                                      Variant="Variant.Outlined"
+                                      Required="true"
+                                      RequiredError="Title is required"
+                                      MaxLength="200"
+                                      Counter="200" />
+                    </MudItem>
+
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="post.Content"
+                                      Label="Content"
+                                      Variant="Variant.Outlined"
+                                      Required="true"
+                                      RequiredError="Content is required"
+                                      Lines="8"
+                                      MaxLength="5000"
+                                      Counter="5000" />
+                    </MudItem>
+
+                    <MudItem xs="12" sm="6">
+                        <MudSelect T="string"
+                                   Label="Category"
+                                   @bind-Value="post.CategoryId"
+                                   Variant="Variant.Outlined"
+                                   Required="true"
+                                   RequiredError="Please select a category">
+                            @foreach (var category in categories)
+                            {
+                                <MudSelectItem T="string" Value="@category.Id">@category.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="6">
+                        <MudTextField @bind-Value="tagsInput"
+                                      Label="Tags"
+                                      Variant="Variant.Outlined"
+                                      Placeholder="Enter tags separated by commas"
+                                      HelperText="Add relevant tags to help readers find your post" />
+                    </MudItem>
+
+                    <MudItem xs="12">
+                        <MudStack Row="true" Spacing="2">
+                            <MudChip T="string" Color="Color.Info" Size="Size.Small">
+                                <MudIcon Icon="@Icons.Material.Filled.Info" Class="mr-1" />
+                                <MudText Typo="Typo.caption">Max 200 characters for title</MudText>
+                            </MudChip>
+                            <MudChip T="string" Color="Color.Info" Size="Size.Small">
+                                <MudIcon Icon="@Icons.Material.Filled.Info" Class="mr-1" />
+                                <MudText Typo="Typo.caption">Max 5000 characters for content</MudText>
+                            </MudChip>
+                        </MudStack>
+                    </MudItem>
+
+                    <MudItem xs="12" Class="d-flex justify-end mt-4">
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Default"
+                                   Class="mr-2"
+                                   OnClick="@GoToPosts"
+                                   StartIcon="@Icons.Material.Filled.Cancel">
+                            Cancel
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Primary"
+                                   Class="mr-2"
+                                   OnClick="SubmitDraft"
+                                   Disabled="@(!isValid || isSubmitting)"
+                                   StartIcon="@Icons.Material.Filled.Save">
+                            @if (isSubmitting && submitAction == "draft")
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                                <span class="ml-2">Saving Draft...</span>
+                            }
+                            else
+                            {
+                                <span>Save as Draft</span>
+                            }
+                        </MudButton>
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Success"
+                                   OnClick="SubmitPublish"
+                                   Disabled="@(!isValid || isSubmitting)"
+                                   StartIcon="@Icons.Material.Filled.Publish">
+                            @if (isSubmitting && submitAction == "publish")
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                                <span class="ml-2">Publishing...</span>
+                            }
+                            else
+                            {
+                                <span>Publish Now</span>
+                            }
+                        </MudButton>
+                    </MudItem>
+                </MudGrid>
+            </MudForm>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    private MudForm form;
+    private bool isValid;
+    private bool isAuthenticated;
+    private bool isLoading = true;
+    private bool isSubmitting = false;
+    private string submitAction = "";
+    private Post post = new();
+    private List<Category> categories = new();
+    private string tagsInput;
+    private string currentUserId;
+    private string currentUserName;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        isAuthenticated = authState.User.Identity?.IsAuthenticated ?? false;
+
+        if (!isAuthenticated)
+        {
+            Navigation.NavigateTo("/signin", true);
+            return;
+        }
+
+        currentUserId = authState.User.FindFirst("sub")?.Value
+                        ?? authState.User.FindFirst("id")?.Value
+                        ?? "";
+
+        currentUserName = authState.User.FindFirst("name")?.Value
+                          ?? authState.User.FindFirst("preferred_username")?.Value
+                          ?? authState.User.Identity?.Name
+                          ?? "";
+
+        try
+        {
+            categories = await BlogService.GetCategoriesAsync();
+            if (!categories.Any())
+            {
+                Snackbar.Add("No categories available. You can create a new category using the 'Add Category' button.", Severity.Info);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading categories: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void GoToPosts()
+    {
+        Navigation.NavigateTo("/posts");
+    }
+
+    private async Task SubmitDraft()
+    {
+        await SubmitPost("Draft");
+    }
+
+    private async Task SubmitPublish()
+    {
+        await SubmitPost("Published");
+    }
+
+    private async Task SubmitPost(string status)
+    {
+        if (!isValid)
+        {
+            Snackbar.Add("Please fill out all required fields.", Severity.Warning);
+            return;
+        }
+
+        isSubmitting = true;
+        submitAction = status.ToLower();
+
+        try
+        {
+            post.Id = Guid.NewGuid().ToString();
+            post.AuthorId = currentUserId;
+            post.AuthorName = currentUserName;
+            post.Status = status;
+            post.CreatedAt = DateTime.UtcNow;
+
+            if (status == "Published")
+            {
+                post.PublishedAt = DateTime.UtcNow;
+            }
+
+            post.Tags = !string.IsNullOrWhiteSpace(tagsInput)
+                ? tagsInput
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(t => t.Trim())
+                    .Where(t => !string.IsNullOrWhiteSpace(t))
+                    .ToList()
+                : new List<string>();
+
+            if (status == "Draft")
+            {
+                await BlogService.CreateDraftAsync(post);
+                Snackbar.Add("Draft created successfully!", Severity.Success);
+                Navigation.NavigateTo("/drafts");
+            }
+            else
+            {
+                await BlogService.CreatePostAsync(post);
+                Snackbar.Add("Post published successfully!", Severity.Success);
+                Navigation.NavigateTo("/posts");
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error creating {status.ToLower()}: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            isSubmitting = false;
+            submitAction = "";
+        }
+    }
+}

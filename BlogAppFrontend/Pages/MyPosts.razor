@@ -1,0 +1,82 @@
+﻿@page "/my-postsss"
+@using BlogAppFrontend.Models
+@using BlogAppFrontend.Services
+@inject BlogService BlogService
+@inject NavigationManager Navigation
+
+<PageTitle>My Posts</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <MudPaper Elevation="3" Class="pa-6 mb-6 mud-border-radius-lg">
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudText Typo="Typo.h4" Color="Color.Primary">My Posts</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                    View and manage posts you’ve created.
+                </MudText>
+            </MudItem>
+            <MudItem xs="12" sm="6" Class="d-flex justify-end align-center">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="@(() => Navigation.NavigateTo("/create-post"))">
+                    Create New Post
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @if (_posts.Any())
+    {
+        <MudGrid GutterSize="3">
+            @foreach (var post in _posts)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Elevation="2" Class="facebook-post">
+                        <MudCardHeader>
+                            <MudText Typo="Typo.h6">@post.Title</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@post.CreatedAt.ToString("MMM dd, yyyy")</MudText>
+                        </MudCardHeader>
+                        <MudCardContent>
+                            <MudText Typo="Typo.body2" Class="line-clamp-3">
+                                @post.Content
+                            </MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text" Color="Color.Primary"
+                                       OnClick="@(() => ViewPost(post.Id))"
+                                       EndIcon="@Icons.Material.Filled.ArrowForward">
+                                Read More
+                            </MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+    else
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Filled" Class="my-4">
+            You haven’t created any posts yet.
+        </MudAlert>
+    }
+</MudContainer>
+
+@code {
+    private List<Post> _posts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _posts = await BlogService.GetMyPostsAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to load user posts: {ex.Message}");
+        }
+    }
+
+    void ViewPost(string id)
+    {
+        Navigation.NavigateTo($"/post/{id}");
+    }
+}

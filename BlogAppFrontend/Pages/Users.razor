@@ -1,0 +1,120 @@
+﻿@page "/users"
+@using BlogAppFrontend.Models
+@using BlogAppFrontend.Services
+@inject BlogService BlogService
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+@inject AuthService AuthService
+
+<PageTitle>People</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <MudText Typo="Typo.h4" Color="Color.Primary" Class="mb-4">People</MudText>
+
+    @if (isLoading)
+    {
+        <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+    }
+    else if (!users.Any())
+    {
+        <MudAlert Severity="Severity.Info">No users found.</MudAlert>
+    }
+    else
+    {
+        <MudGrid>
+            @foreach (var user in users)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Class="mb-4">
+                        <MudCardMedia Image="@GetProfileImage(user)" Height="160" />
+                        <MudCardContent>
+                            <MudText Typo="Typo.h6">@user.Username</MudText>
+                            <MudText Typo="Typo.body2">@user.Bio</MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudTooltip Text="@(followingUserIds.Contains(user.Id) ? "Unfollow" : "Follow")">
+                                <MudIconButton Icon="@(followingUserIds.Contains(user.Id) ? @Icons.Material.Filled.PersonRemove : @Icons.Material.Filled.PersonAdd)"
+                                               Color="@(followingUserIds.Contains(user.Id) ? Color.Secondary : Color.Primary)"
+                                               OnClick="@(() => ToggleFollow(user))" />
+                            </MudTooltip>
+
+                            <MudTooltip Text="View Profile">
+                                <MudIconButton Icon="@Icons.Material.Filled.AccountCircle"
+                                               Color="Color.Primary"
+                                               OnClick="@(() => NavigateToProfile(user.Id))" />
+                            </MudTooltip>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+</MudContainer>
+
+@code {
+    private List<UserProfile> users = new();
+    private HashSet<string> followingUserIds = new();
+    private bool isLoading = true;
+    private string currentUserId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading = true;
+        try
+        {
+            currentUserId = await AuthService.GetUserIdAsync();
+
+            // 🚀 Your backend method here to fetch all profiles
+            users = await BlogService.GetAllUserProfilesAsync();
+
+            // remove myself
+            users = users.Where(u => u.Id != currentUserId).ToList();
+
+            var following = await BlogService.GetFollowingAsync();
+            followingUserIds = following.Select(f => f.FollowingId).ToHashSet();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading users: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task ToggleFollow(UserProfile user)
+    {
+        try
+        {
+            if (followingUserIds.Contains(user.Id))
+            {
+                await BlogService.UnfollowUserAsync(user.Id);
+                followingUserIds.Remove(user.Id);
+                Snackbar.Add($"Unfollowed {user.Username}", Severity.Info);
+            }
+            else
+            {
+                await BlogService.FollowUserAsync(user.Id);
+                followingUserIds.Add(user.Id);
+                Snackbar.Add($"Followed {user.Username}", Severity.Success);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void NavigateToProfile(string userId)
+    {
+        Navigation.NavigateTo($"/profile/{userId}");
+    }
+
+    private string GetProfileImage(UserProfile user)
+    {
+        return string.IsNullOrEmpty(user.ProfilePictureUrl)
+            ? "https://via.placeholder.com/160"
+            : user.ProfilePictureUrl;
+    }
+}

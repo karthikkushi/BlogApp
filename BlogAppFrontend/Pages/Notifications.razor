@@ -1,0 +1,136 @@
+﻿@page "/notifications"
+@using BlogAppFrontend.Models
+@using BlogAppFrontend.Services
+@using MudBlazor
+@inject BlogService BlogService
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthStateProvider
+@layout MainLayout
+
+<CascadingValue Value="@this">
+    <MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+        <MudText Typo="Typo.h4" Color="Color.Primary" Class="mb-4">Notifications</MudText>
+        @if (isLoading)
+        {
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" Class="d-flex justify-center align-center" Style="height: 50vh;" />
+        }
+        else if (!isAuthenticated)
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" Elevation="2" Class="my-4 mx-auto" Style="max-width: 600px;">
+                Please sign in to view notifications.
+            </MudAlert>
+        }
+        else if (!notifications.Any())
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Filled" Elevation="2" Class="my-4">No notifications available.</MudAlert>
+        }
+        else
+        {
+            <MudPaper Elevation="3" Class="pa-4">
+                <MudList T="Notification">
+                    @foreach (var notification in notifications.OrderByDescending(n => n.CreatedAt))
+                    {
+                        <MudListItem T="Notification" @onclick="@(() => MarkNotificationAsRead(notification.Id))">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudText Typo="Typo.body1" Color="@(notification.IsRead ? Color.Default : Color.Primary)">
+                                    @notification.Message
+                                </MudText>
+                                @if (!notification.IsRead)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Error">New</MudChip>
+                                }
+                            </MudStack>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                @notification.CreatedAt.ToString("MMM dd, hh:mm tt")
+                            </MudText>
+                        </MudListItem>
+                    }
+                </MudList>
+            </MudPaper>
+        }
+    </MudContainer>
+</CascadingValue>
+
+@code {
+    private List<Notification> notifications = new();
+    private bool isLoading = true;
+    private bool isAuthenticated;
+    private string errorMessage;
+    private int unreadCount;
+
+    [CascadingParameter]
+    public EventCallback<int> OnNotificationUpdated { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        isAuthenticated = authState.User.Identity?.IsAuthenticated ?? false;
+
+        if (!isAuthenticated)
+        {
+            errorMessage = "Please sign in to view notifications.";
+            isLoading = false;
+            return;
+        }
+
+        try
+        {
+            await LoadNotificationsAsync();
+            Console.WriteLine($"Initial notifications loaded: {notifications.Count} total, {unreadCount} unread. Sample: {System.Text.Json.JsonSerializer.Serialize(notifications.Take(1))}");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading notifications: {ex.Message}";
+            Snackbar.Add(errorMessage, Severity.Error);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadNotificationsAsync()
+    {
+        try
+        {
+            Console.WriteLine("Loading notifications...");
+            notifications = await BlogService.GetNotificationsAsync();
+            unreadCount = notifications.Count(n => !n.IsRead);
+            await UpdateUnreadCount();
+            Console.WriteLine($"Loaded {notifications.Count} notifications, {unreadCount} unread. Sample: {System.Text.Json.JsonSerializer.Serialize(notifications.Take(1))}");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading notifications: {ex.Message}";
+            Snackbar.Add(errorMessage, Severity.Error);
+        }
+    }
+
+    private async Task MarkNotificationAsRead(string notificationId)
+    {
+        try
+        {
+            Console.WriteLine($"Marking notification {notificationId} as read...");
+            var notification = notifications.FirstOrDefault(n => n.Id == notificationId);
+            if (notification != null && !notification.IsRead)
+            {
+                await BlogService.MarkNotificationAsReadAsync(notificationId);
+                notification.IsRead = true; // Update local state
+                unreadCount--; // Decrease unread count immediately
+                await UpdateUnreadCount(); // Notify MainLayout instantly
+                StateHasChanged(); // Refresh UI
+                Console.WriteLine($"Notification {notificationId} marked as read. New unread count: {unreadCount}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error marking notification as read: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task UpdateUnreadCount()
+    {
+        Console.WriteLine($"Updating unread count to {unreadCount}");
+        await OnNotificationUpdated.InvokeAsync(unreadCount);
+    }
+}

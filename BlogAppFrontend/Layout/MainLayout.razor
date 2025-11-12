@@ -1,0 +1,314 @@
+﻿@inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@using BlogAppFrontend.Services
+@using BlogAppFrontend.Models
+@inject NavigationManager Navigation
+@inject AuthService AuthService
+@inject BlogService BlogService
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
+
+<MudThemeProvider Theme="@_currentTheme" IsDarkMode="@_isDarkMode" />
+<MudDialogProvider />
+<MudSnackbarProvider />
+<MudPopoverProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="2" Color="Color.Surface" Class="modern-appbar">
+        <div class="appbar-container">
+            <div class="appbar-left">
+                <MudIcon Icon="@Icons.Material.Filled.MenuBook" Size="Size.Large" Class="appbar-logo cursor-pointer" @onclick="DrawerToggle" Color="Color.Inherit" />
+                <MudText Typo="Typo.h6" Class="appbar-title" Color="Color.Inherit">BlogApp</MudText>
+            </div>
+            <div class="appbar-right">
+                <AuthorizeView>
+                    <Authorized>
+                        @if (isLoaded)
+                        {
+                            <MudMenu OffsetY="true">
+                                <ActivatorContent>
+                                    <MudIcon Icon="@Icons.Material.Filled.MoreVert" Size="Size.Medium" Class="cursor-pointer" Color="Color.Inherit" />
+                                </ActivatorContent>
+                                <ChildContent>
+                                    <MudMenuItem OnClick="ToggleTheme" Color="Color.Inherit">
+                                        <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="1">
+                                            <MudIcon Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)" />
+                                            <MudText Typo="Typo.body2">@(_isDarkMode ? "Light Mode" : "Dark Mode")</MudText>
+                                        </MudStack>
+                                    </MudMenuItem>
+                                    <MudDivider />
+                                    <MudMenuItem Href="/profile" Color="Color.Inherit">Profile</MudMenuItem>
+                                    <MudDivider />
+                                    <MudMenuItem OnClick="Logout" Color="Color.Inherit">Logout</MudMenuItem>
+                                </ChildContent>
+                            </MudMenu>
+                            <MudBadge Color="Color.Error" Content="@unreadCount" Overlap="true" Invisible="@(unreadCount == 0)">
+                                <MudIconButton Icon="@Icons.Material.Filled.Notifications" Color="Color.Inherit" OnClick="NavigateToNotifications" Size="Size.Medium" Class="ml-2" />
+                            </MudBadge>
+                        }
+                        else
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Primary" />
+                        }
+                    </Authorized>
+                    <NotAuthorized>
+                        <MudButton Variant="Variant.Text" Color="Color.Inherit" Href="/signin">Sign In</MudButton>
+                        <MudButton Color="Color.Primary" Variant="Variant.Filled" Class="ml-2" Href="/signup" Style="background: #4a90e2; color: white; border-radius: 8px;">
+                            Sign Up
+                        </MudButton>
+                    </NotAuthorized>
+                </AuthorizeView>
+            </div>
+        </div>
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="@_drawerOpen"
+               Variant="DrawerVariant.Mini"
+               Width="260px"
+               MiniWidth="70px"
+               ClipMode="DrawerClipMode.Always"
+               Elevation="2"
+               Color="Color.Surface">
+        <CascadingValue Value="_drawerOpen">
+            <NavMenu />
+        </CascadingValue>
+    </MudDrawer>
+
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.Large" Class="modern-main-bg">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+<style>
+    .modern-main-bg {
+        background: linear-gradient(135deg, var(--mud-palette-background) 0%, var(--mud-palette-surface) 100%);
+        min-height: calc(100vh - 64px);
+        border-radius: 16px;
+        box-shadow: 0 4px 24px rgba(var(--mud-palette-primary-rgb), 0.04);
+        padding: 24px;
+    }
+
+    .modern-appbar {
+        background: linear-gradient(90deg, var(--mud-palette-appbar-background) 0%, var(--mud-palette-surface) 100%);
+        color: var(--mud-palette-text-primary);
+        backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--mud-palette-divider);
+    }
+
+    .cursor-pointer {
+        cursor: pointer;
+    }
+
+    .appbar-container {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 64px;
+        width: 100%;
+        padding: 0 16px;
+    }
+
+    .appbar-left {
+        display: flex;
+        align-items: center;
+    }
+
+    .appbar-logo {
+        margin-right: 8px;
+    }
+
+    .appbar-title {
+        font-weight: 600;
+    }
+
+    .appbar-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .theme-toggle {
+        margin-right: 8px;
+    }
+</style>
+
+@code {
+    private bool _drawerOpen = true;
+    private bool _isDarkMode;
+    private MudTheme _currentTheme = CustomMudTheme.ModernLightTheme;
+    private const string ThemeKey = "blogapp_theme";
+    private string profilePictureUri = "https://via.placeholder.com/64x64.png?text=U";
+    private string username = string.Empty;
+    private bool isLoaded;
+    private bool _isDebugMode = true;
+    private int unreadCount;
+
+    public static class CustomMudTheme
+    {
+        public static readonly MudTheme ModernLightTheme = new()
+            {
+                PaletteLight = new PaletteLight
+                {
+                    Primary = "#4a90e2",
+                    Secondary = "#4a90e2",
+                    Background = "#e6f0fa",
+                    AppbarBackground = "#e6f0fa",
+                    DrawerBackground = "#f7f9fc",
+                    Surface = "#d0e2f7",
+                    TextPrimary = "#2c3e50",
+                    TextSecondary = "#4a5568",
+                    Success = "#22c55e",
+                    Error = "#ef4444",
+                    Warning = "#f59e42",
+                    Info = "#4a90e2"
+                },
+                Typography = new Typography
+                {
+                    Default = new Default
+                    {
+                        FontFamily = new[] { "Inter", "Roboto", "Open Sans", "Segoe UI", "Arial", "sans-serif" }
+                    }
+                },
+                LayoutProperties = new LayoutProperties { DefaultBorderRadius = "12px" }
+            };
+
+        public static readonly MudTheme ModernDarkTheme = new()
+            {
+                PaletteDark = new PaletteDark
+                {
+                    Primary = "#2196F3",               // Bright blue
+                    Secondary = "#03DAC6",             // Teal accent
+                    Background = "#121212",            // Near-black dark gray
+                    AppbarBackground = "#1E1E1E",      // Dark gray for AppBar
+                    DrawerBackground = "#1A1A1A",      // Darker gray for Drawer
+                    Surface = "#242424",               // Slightly lighter than background
+                    TextPrimary = "#FFFFFF",           // White text
+                    TextSecondary = "#B0B0B0",         // Light gray text
+                    Divider = "#333333",               // Divider lines
+                    Success = "#4CAF50",               // Green
+                    Error = "#F44336",                 // Red
+                    Warning = "#FFC107",               // Amber
+                    Info = "#2196F3",                  // Blue
+                    ActionDefault = "#ffffffcc",       // Slightly transparent white
+                    ActionDisabled = "#ffffff4d",      // More transparent white
+                    HoverOpacity = 0.08
+                },
+                Typography = new Typography
+                {
+                    Default = new Default
+                    {
+                        FontFamily = new[] { "Inter", "Roboto", "Open Sans", "Segoe UI", "Arial", "sans-serif" }
+                    }
+                },
+                LayoutProperties = new LayoutProperties { DefaultBorderRadius = "12px" }
+            };
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var theme = await JS.InvokeAsync<string>("localStorage.getItem", ThemeKey);
+            _isDarkMode = string.IsNullOrEmpty(theme) ? false : theme == "dark";
+            _currentTheme = _isDarkMode ? CustomMudTheme.ModernDarkTheme : CustomMudTheme.ModernLightTheme;
+
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            if (user.Identity?.IsAuthenticated ?? false)
+            {
+                var userId = await AuthService.GetUserIdAsync();
+                if (!string.IsNullOrEmpty(userId))
+                {
+                    var profile = await BlogService.GetUserProfileAsync(userId);
+                    if (profile != null)
+                    {
+                        username = profile.Username ?? userId;
+                        profilePictureUri = string.IsNullOrWhiteSpace(profile.ProfilePictureUrl)
+                            ? profilePictureUri
+                            : profile.ProfilePictureUrl;
+                    }
+                    else
+                    {
+                        username = userId;
+                    }
+                    await LoadNotificationsAsync();
+                }
+            }
+        }
+        catch (JSException ex)
+        {
+            Snackbar.Add($"JavaScript error: {ex.Message}", Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Initialization error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            isLoaded = true;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadNotificationsAsync()
+    {
+        try
+        {
+            Console.WriteLine("Loading notifications in MainLayout...");
+            var allNotifications = await BlogService.GetNotificationsAsync();
+            unreadCount = allNotifications.Count(n => !n.IsRead);
+            Console.WriteLine($"Loaded {allNotifications.Count} notifications, {unreadCount} unread in MainLayout.");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading notifications: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ToggleTheme()
+    {
+        try
+        {
+            _isDarkMode = !_isDarkMode;
+            _currentTheme = _isDarkMode
+                ? CustomMudTheme.ModernDarkTheme
+                : CustomMudTheme.ModernLightTheme;
+
+            await JS.InvokeVoidAsync("localStorage.setItem", ThemeKey, _isDarkMode ? "dark" : "light");
+            StateHasChanged();
+        }
+        catch (JSException ex)
+        {
+            Snackbar.Add($"Theme toggle error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void DrawerToggle()
+    {
+        _drawerOpen = !_drawerOpen;
+        StateHasChanged();
+    }
+
+    private async Task Logout()
+    {
+        try
+        {
+            await AuthService.SignOutAsync();
+            Snackbar.Add("Signed out successfully!", Severity.Success);
+            Navigation.NavigateTo("/");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Logout error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void NavigateToNotifications()
+    {
+        Navigation.NavigateTo("/notifications");
+    }
+}
